@@ -2,19 +2,11 @@ name: Deploy to Production
 
 on:
   repository_dispatch:
-<<<<<<< HEAD
-    types: [deploy-client, deploy-server]
-=======
     types: [deploy-api-gateway, deploy-account-ms, deploy-search-ms, deploy-messaging-ms, deploy-notification-ms]
->>>>>>> 2fcb366 (added git)
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-<<<<<<< HEAD
-
-=======
->>>>>>> 2fcb366 (added git)
     steps:
       - name: SSH into server and deploy
         uses: appleboy/ssh-action@v1.0.3
@@ -23,26 +15,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-<<<<<<< HEAD
-            cd /var/www/services
-
-            # Pull latest deployment repo changes
-            git pull origin main
-
-            # Update image reference from dispatched event
-            echo "IMAGE=${{ github.event.client_payload.image }}" > .env
-
-            # Authenticate with Docker Hub (needed for private client image)
-            echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
-
-            # Pull latest images
-            docker compose -f docker-compose.yml pull
-
-            # Restart services
-            docker compose -f docker-compose.yml up -d --remove-orphans
-=======
             cd /var/www/ms
             docker compose -f docker-compose.yml pull
             docker compose -f docker-compose.yml up -d --remove-orphans
 
->>>>>>> 2fcb366 (added git)
