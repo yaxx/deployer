@@ -2,7 +2,12 @@ name: Deploy to Production
 
 on:
   repository_dispatch:
-    types: [deploy-api-gateway, deploy-account-ms, deploy-search-ms, deploy-messaging-ms, deploy-notification-ms]
+    types:
+      - deploy-api-gateway
+      - deploy-account-ms
+      - deploy-search-ms
+      - deploy-messaging-ms
+      - deploy-notification-ms
 
 jobs:
   deploy:
@@ -16,6 +21,5 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             cd /var/www/ms
-            docker compose -f docker-compose.yml pull
-            docker compose -f docker-compose.yml up -d --remove-orphans
-
+            docker compose pull
+            docker compose up -d --remove-orphans
