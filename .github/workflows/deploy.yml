@@ -13,14 +13,28 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: SSH into server and deploy
+      - uses: actions/checkout@v4
+
+      - name: Copy compose and .env files & deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
+            mkdir -p /var/www/ms
+
+            #Copy docker-compose.yml from repo to server
+            cat > /var/www/ms/docker-compose.yml << 'EOF'
+            $(cat docker-compose.yml)
+            EOF
+
+            # Copy .env file from repo to server
+            cat > /var/www/ms/.env << 'EOF'
+            $(cat .env)
+            EOF
+
+            # Navigate to deployment directory and deploy
             cd /var/www/ms
             docker compose pull
             docker compose up -d --remove-orphans
- 
