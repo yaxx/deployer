@@ -1,0 +1,275 @@
+version: "3.9"
+
+networks:
+  sosys-net:
+    driver: bridge
+
+volumes:
+  kafka-data:
+
+services:
+  # --------------------
+  # NGINX (ENTRY POINT)
+  # --------------------
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: sosys-nginx
+    ports:
+      - "80:80"
+    volumes:
+    - ../nginx/conf.d:/etc/nginx/conf.d
+    - ../nginx/.htpasswd:/etc/nginx/.htpasswd
+    depends_on:
+      - api-gateway
+    networks:
+      - sosys-net
+    restart: unless-stopped
+
+  # --------------------
+  # API GATEWAY
+  # --------------------
+  api-gateway:
+    build: ../services/api-gateway
+    container_name: sosys-api-gateway
+    environment:
+      NODE_ENV: production
+      KAFKA_BROKER: kafka:29092
+    networks:
+      - sosys-net
+    restart: unless-stopped
+
+  # --------------------
+  # ACCOUNT SERVICE
+  # --------------------
+  account-service:
+    build: ../services/account
+    container_name: sosys-account
+    environment:
+      KAFKA_BROKER: kafka:29092
+      MONGODB_URI: ${ACCOUNT_MONGO_URI}
+    networks:
+      - sosys-net
+    restart: unless-stopped
+
+  # --------------------
+  # MESSAGING SERVICE
+  # --------------------
+  messaging-service:
+    build: ../services/messaging
+    container_name: sosys-messaging
+    environment:
+      KAFKA_BROKER: kafka:29092
+      MONGODB_URI: ${MESSAGING_MONGO_URI}
+    networks:
+      - sosys-net
+    restart: unless-stopped
+
+  # --------------------
+  # NOTIFICATION SERVICE
+  # --------------------
+  notification-service:
+    build: ../services/notification
+    container_name: sosys-notification
+    environment:
+      KAFKA_BROKER: kafka:29092
+      MONGODB_URI: ${NOTIFICATION_MONGO_URI}
+    networks:
+      - sosys-net
+    restart: unless-stopped
+
+  # --------------------
+  # SEARCH SERVICE
+  # --------------------
+  search-service:
+    build: ../services/search
+    container_name: sosys-search
+    environment:
+      KAFKA_BROKER: kafka:29092
+      MONGODB_URI: ${SEARCH_MONGO_URI}
+    networks:
+      - sosys-net
+    restart: unless-stopped
+
+  # --------------------
+  # KAFKA (INTERNAL)
+  # --------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: sosys-kafka
+    hostname: kafka
+    restart: unless-stopped
+
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - sosys-net
+
+  # --------------------
+  # KAFKA TOPIC INIT
+  # --------------------
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: sosys-kafka-init
+    depends_on:
+      - kafka
+    networks:
+      - sosys-net
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+
+      # Wait for Kafka to be ready
+      echo 'Waiting for Kafka to be ready...'
+      sleep 45
+      
+      # Test connection
+      kafka-topics --bootstrap-server kafka:29092 --list
+      
+      # Create main event topics
+      echo 'Creating marketplace event topics...'
+      
+      kafka-topics --create --topic marketplace.user.events \
+        --bootstrap-server kafka:29092 \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config cleanup.policy=delete \
+        --config retention.ms=604800000 \
+        --config segment.ms=86400000 \
+        --if-not-exists || echo 'marketplace.user.events already exists'
+      
+      kafka-topics --create --topic marketplace.seller.events \
+        --bootstrap-server kafka:29092 \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config cleanup.policy=delete \
+        --config retention.ms=604800000 \
+        --config segment.ms=86400000 \
+        --if-not-exists || echo 'marketplace.seller.events already exists'
+      
+      kafka-topics --create --topic marketplace.request.events \
+        --bootstrap-server kafka:29092 \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config cleanup.policy=delete \
+        --config retention.ms=604800000 \
+        --config segment.ms=86400000 \
+        --if-not-exists || echo 'marketplace.request.events already exists'
+      
+      kafka-topics --create --topic marketplace.offer.events \
+        --bootstrap-server kafka:29092 \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config cleanup.policy=delete \
+        --config retention.ms=604800000 \
+        --config segment.ms=86400000 \
+        --if-not-exists || echo 'marketplace.offer.events already exists'
+      
+      kafka-topics --create --topic marketplace.chat.events \
+        --bootstrap-server kafka:29092 \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config cleanup.policy=delete \
+        --config retention.ms=604800000 \
+        --config segment.ms=86400000 \
+        --if-not-exists || echo 'marketplace.chat.events already exists'
+      
+      kafka-topics --create --topic marketplace.notification.events \
+        --bootstrap-server kafka:29092 \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config cleanup.policy=delete \
+        --config retention.ms=86400000 \
+        --config segment.ms=3600000 \
+        --if-not-exists || echo 'marketplace.notification.events already exists'
+      
+      # Create dead letter queue topics
+      echo 'Creating dead letter queue topics...'
+      
+      kafka-topics --create --topic marketplace.user.events.dlq \
+        --bootstrap-server kafka:29092 \
+        --partitions 1 \
+        --replication-factor 1 \
+        --config cleanup.policy=delete \
+        --config retention.ms=2592000000 \
+        --if-not-exists || echo 'marketplace.user.events.dlq already exists'
+      
+      kafka-topics --create --topic marketplace.seller.events.dlq \
+        --bootstrap-server kafka:29092 \
+        --partitions 1 \
+        --replication-factor 1 \
+        --config cleanup.policy=delete \
+        --config retention.ms=2592000000 \
+        --if-not-exists || echo 'marketplace.seller.events.dlq already exists'
+      
+      kafka-topics --create --topic marketplace.request.events.dlq \
+        --bootstrap-server kafka:29092 \
+        --partitions 1 \
+        --replication-factor 1 \
+        --config cleanup.policy=delete \
+        --config retention.ms=2592000000 \
+        --if-not-exists || echo 'marketplace.request.events.dlq already exists'
+      
+      kafka-topics --create --topic marketplace.offer.events.dlq \
+        --bootstrap-server kafka:29092 \
+        --partitions 1 \
+        --replication-factor 1 \
+        --config cleanup.policy=delete \
+        --config retention.ms=2592000000 \
+        --if-not-exists || echo 'marketplace.offer.events.dlq already exists'
+      
+      kafka-topics --create --topic marketplace.chat.events.dlq \
+        --bootstrap-server kafka:29092 \
+        --partitions 1 \
+        --replication-factor 1 \
+        --config cleanup.policy=delete \
+        --config retention.ms=2592000000 \
+        --if-not-exists || echo 'marketplace.chat.events.dlq already exists'
+      
+      kafka-topics --create --topic marketplace.notification.events.dlq \
+        --bootstrap-server kafka:29092 \
+        --partitions 1 \
+        --replication-factor 1 \
+        --config cleanup.policy=delete \
+        --config retention.ms=2592000000 \
+        --if-not-exists || echo 'marketplace.notification.events.dlq already exists'
+      
+      echo 'All topics created successfully!'
+      echo 'Listing all topics:'
+      kafka-topics --list --bootstrap-server kafka:29092
+      
+      echo 'Topic details:'
+      kafka-topics --describe --bootstrap-server kafka:29092
+      
+
+  # --------------------
+  # KAFKA UI (INTERNAL)
+  # --------------------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: sosys-kafka-ui
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: sosys
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    networks:
+      - sosys-net
+    restart: unless-stopped
